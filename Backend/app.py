@@ -15,14 +15,62 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 SCALER_PATH = os.path.join(MODELS_DIR, "scaler.pkl")
-DATASET_PATH = os.path.join(PROJECT_DIR, "cardio_train.csv")
-RESULTS_CSV_PATH = os.path.join(PROJECT_DIR, "model_results.csv")
-HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
+# Check BASE_DIR first (self-contained deployment), fallback to PROJECT_DIR
+DATASET_PATH = os.path.join(BASE_DIR, "cardio_train.csv")
+if not os.path.exists(DATASET_PATH):
+    DATASET_PATH = os.path.join(PROJECT_DIR, "cardio_train.csv")
 
-# Ensure history file exists
-if not os.path.exists(HISTORY_FILE):
-    with open(HISTORY_FILE, "w") as f:
-        json.dump([], f)
+RESULTS_CSV_PATH = os.path.join(BASE_DIR, "model_results.csv")
+if not os.path.exists(RESULTS_CSV_PATH):
+    RESULTS_CSV_PATH = os.path.join(PROJECT_DIR, "model_results.csv")
+
+def get_history_file():
+    """Get writable path for history.json, supporting serverless environments like Vercel."""
+    is_serverless = os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if is_serverless or not os.access(BASE_DIR, os.W_OK):
+        tmp_path = os.path.join("/tmp", "history.json")
+        if not os.path.exists(tmp_path):
+            seed_path = os.path.join(BASE_DIR, "history.json")
+            initial_data = []
+            if os.path.exists(seed_path):
+                try:
+                    with open(seed_path, "r", encoding="utf-8") as f:
+                        initial_data = json.load(f)
+                except Exception:
+                    initial_data = []
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(initial_data, f)
+            except Exception:
+                pass
+        return tmp_path
+    return os.path.join(BASE_DIR, "history.json")
+
+_memory_history = []
+
+def read_history():
+    """Safely read history with in-memory fallback."""
+    global _memory_history
+    try:
+        h_path = get_history_file()
+        if os.path.exists(h_path):
+            with open(h_path, "r", encoding="utf-8") as f:
+                _memory_history = json.load(f)
+                return _memory_history
+    except Exception as e:
+        print("History read warning:", e)
+    return _memory_history
+
+def write_history(data):
+    """Safely write history with in-memory fallback."""
+    global _memory_history
+    _memory_history = data
+    try:
+        h_path = get_history_file()
+        with open(h_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print("History write warning:", e)
 
 # Preload scaler
 scaler = joblib.load(SCALER_PATH)
@@ -405,6 +453,8 @@ def compute_dataset_analytics():
 # API ENDPOINTS
 # ==============================================================================
 
+@app.get("/")
+@app.get("/health")
 @app.get("/api/health")
 def health():
     return jsonify({
@@ -570,13 +620,10 @@ def predict():
         }
 
         try:
-            with open(HISTORY_FILE, "r") as f:
-                hist = json.load(f)
+            hist = read_history()
             hist.insert(0, history_entry)
             # Keep up to 200 history items
-            hist = hist[:200]
-            with open(HISTORY_FILE, "w") as f:
-                json.dump(hist, f, indent=2)
+            write_history(hist[:200])
         except Exception as e:
             print("History write warning:", e)
 
@@ -611,11 +658,7 @@ def predict():
 @app.get("/api/history")
 def get_history():
     """Retrieve prediction history with optional search and filter."""
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            hist = json.load(f)
-    except Exception:
-        hist = []
+    hist = read_history()
 
     model_filter = request.args.get("model")
     prediction_filter = request.args.get("prediction")
@@ -659,11 +702,9 @@ def create_history():
             **data
         }
 
-        with open(HISTORY_FILE, "r") as f:
-            hist = json.load(f)
+        hist = read_history()
         hist.insert(0, entry)
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(hist, f, indent=2)
+        write_history(hist[:200])
 
         return jsonify({"success": True, "entry": entry}), 201
     except Exception as e:
@@ -675,8 +716,7 @@ def update_history(item_id):
     """Update notes or metadata for a history entry."""
     try:
         data = request.get_json()
-        with open(HISTORY_FILE, "r") as f:
-            hist = json.load(f)
+        hist = read_history()
 
         found = False
         for item in hist:
@@ -691,8 +731,7 @@ def update_history(item_id):
         if not found:
             return jsonify({"success": False, "error": "History item not found"}), 404
 
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(hist, f, indent=2)
+        write_history(hist)
 
         return jsonify({"success": True, "message": "Updated successfully"})
     except Exception as e:
@@ -703,15 +742,13 @@ def update_history(item_id):
 def delete_history(item_id):
     """Delete a prediction entry from history."""
     try:
-        with open(HISTORY_FILE, "r") as f:
-            hist = json.load(f)
+        hist = read_history()
 
         new_hist = [h for h in hist if h.get("id") != item_id]
         if len(new_hist) == len(hist):
             return jsonify({"success": False, "error": "Item not found"}), 404
 
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(new_hist, f, indent=2)
+        write_history(new_hist)
 
         return jsonify({"success": True, "message": f"History item {item_id} deleted"})
     except Exception as e:

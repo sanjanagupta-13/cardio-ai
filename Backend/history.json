@@ -1,5 +1,25 @@
 [
   {
+    "id": "0f389076",
+    "timestamp": "2026-09-24 11:24",
+    "modelId": "xgboost",
+    "modelName": "XGBoost",
+    "prediction": 0,
+    "resultLabel": "No Disease Detected",
+    "probability": 21.77,
+    "patientSummary": {
+      "age": 50,
+      "gender": "Male",
+      "height": 168.0,
+      "weight": 62.0,
+      "bp": "120/80",
+      "cholesterol": "1",
+      "gluc": "1",
+      "smoke": "No",
+      "active": "Yes"
+    }
+  },
+  {
     "id": "7fdadca6",
     "timestamp": "2026-09-23 23:42",
     "modelId": "random_forest",
