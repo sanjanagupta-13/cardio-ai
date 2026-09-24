@@ -3,7 +3,18 @@
  * Strict Rule: NO Axios is used in this project.
  */
 
-let rawBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:5000/api").trim().replace(/\/+$/, "");
+const LIVE_BACKEND_URL = "https://cardio-ai-zysh.onrender.com/api";
+
+let rawBaseUrl = (import.meta.env.VITE_API_URL || LIVE_BACKEND_URL).trim().replace(/\/+$/, "");
+
+// Automatically fix the stale/broken Render URL if present in Vercel cached env:
+if (rawBaseUrl.includes("cardio-backend-pbvx.onrender.com") || rawBaseUrl.includes("localhost")) {
+  // If in production browser (not localhost), use live backend URL
+  if (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    rawBaseUrl = LIVE_BACKEND_URL;
+  }
+}
+
 if (!rawBaseUrl.endsWith("/api")) {
   rawBaseUrl = `${rawBaseUrl}/api`;
 }
