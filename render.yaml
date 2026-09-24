@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cardio-ai-backend
+    runtime: python
+    rootDir: Backend
+    buildCommand: pip install gunicorn -r requirements.txt
+    startCommand: python -m gunicorn app:app
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
